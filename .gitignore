@@ -1,0 +1,10 @@
+# Ignore the virtual environment
+venv/
+
+# Python bytecode files
+*.pyc
+*.pyo
+
+# Other files to ignore
+*.log
+*.sqlite3
