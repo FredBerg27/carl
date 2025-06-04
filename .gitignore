@@ -1,5 +1,5 @@
 # Ignore the virtual environment
-venv/
+myenv/
 
 # Python bytecode files
 *.pyc
