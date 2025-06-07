@@ -8,3 +8,6 @@ myenv/
 # Other files to ignore
 *.log
 *.sqlite3
+
+# Ignore test file
+test_stage.py/
