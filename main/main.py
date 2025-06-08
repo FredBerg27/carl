@@ -27,26 +27,23 @@ audio_stream = pa.open(
 frame_count = 0
 alive = True
 
-
-while alive == True:
+try:
+     while alive == True:
       
-     pcm = audio_stream.read(porcupine.frame_length, exception_on_overflow=False)
-     pcm = struct.unpack_from("h" * porcupine.frame_length, pcm)
-     keyword_detection = porcupine.process(pcm)
+         pcm = audio_stream.read(porcupine.frame_length, exception_on_overflow=False)
+         pcm = struct.unpack_from("h" * porcupine.frame_length, pcm)
+         keyword_detection = porcupine.process(pcm)
       
       
-     if keyword_detection >= 0:
-          print("Hello Sir")
-          alive = False
-          
-          
+         if keyword_detection >= 0:
+             print("Hello")
 
-
-if audio_stream:
-     audio_stream.stop_stream()
-     audio_stream.close()
-if pa:
-     pa.terminate()
-if porcupine:
-     porcupine.delete()
+except KeyboardInterrupt:
+     if audio_stream:
+         audio_stream.stop_stream()
+         audio_stream.close()
+     if pa:
+         pa.terminate()
+     if porcupine:
+         porcupine.delete()
          
