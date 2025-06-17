@@ -11,3 +11,6 @@ myenv/
 
 # Ignore test file
 test_stage.py/
+
+# Ignore my personal keys
+keys.py
