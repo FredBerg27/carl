@@ -1,15 +1,17 @@
 from classes import Assistant
-import os
 
 fred = Assistant()
+
+fred.lookup("what happened to starship 36?")
 
 fred.context = fred.default_context
 
 responding = True
 while responding == True:
     new_query = input("$:")
-    fred.load_context(new_query)
+    fred.load_context(new_query, "user")
     response = fred.generate_response(fred.context)
+    fred.load_context(response, "assistant")
     text = ""
     i = 0
     while response[i] != "#":

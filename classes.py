@@ -84,7 +84,7 @@ class Assistant:
 
         self.audio = AudioHandler()
 
-        self.client = OpenAI(api_key = gpt_api)
+        self.client = OpenAI()
 
         prompt = ''
         with open("/home/freddy-berg/CARL/sys_prompt.txt", "r") as file:
@@ -172,9 +172,9 @@ class Assistant:
 
         pass
 
-    def load_context(self, text):
+    def load_context(self, text, role):
         self.context.append({
-            "role":"user",
+            "role": role,
             "content": text
         })
         return
@@ -192,6 +192,7 @@ class Assistant:
             return
 
         text = response.choices[0].message.content
+        self.load_context(text, "assistant")
 
         return text
         
@@ -205,7 +206,20 @@ class Assistant:
         #uses spotify API to play music
         pass
 
-    def lookup(self, query):
-        #uses google API to look up facts
-        pass
+    def lookup(self, phrase):
+        response = self.client.responses.create(
+            model="gpt-4.1",
+            tools=[{ "type": "web_search_preview" }],
+            input=phrase
+        )
+        summarized = self.client.responses.create(
+            model="gpt-4.1",
+            instructions="summarize this text in a few English scentances. No need to cite sources.",
+            input = response.output_text
+        )
+        self.load_context(summarized.output_text, "assistant")
+        return summarized.output_text
+
+        
+        
 
