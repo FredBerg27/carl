@@ -8,10 +8,10 @@ import random
 import piper
 from openai import OpenAI
 from dotenv import find_dotenv, load_dotenv
+import speech_recognition as sr
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
-gpt_api = os.getenv("gpt_api")
 pcup_access = os.getenv("pcup_access")
 path_to_wake = os.getenv("path_to_wake")
 
@@ -97,6 +97,8 @@ class Assistant:
             }
         ]
 
+        self.responding = False
+
         self.context = []
 
         self.reactions = ("/home/freddy-berg/CARL/reactions/yes.wav","/home/freddy-berg/CARL/reactions/huh.wav","/home/freddy-berg/CARL/reactions/whats_up.wav" )
@@ -116,9 +118,6 @@ class Assistant:
                 return(True)
             else:
                 return(False)
-        
-    def shutdown(self):
-        pass
 
     def play_wav_file(self, file_path):
 
@@ -169,8 +168,18 @@ class Assistant:
         return
 
     def listen(self):
+        r = sr.Recognizer()
+        with sr.Microphone() as source:
+            print("Say something!")
+            audio = r.listen(source)
+        try:
+            text = r.recognize_openai(audio)
+        except sr.RequestError as e:
+            print(e)
 
-        pass
+        return text
+
+
 
     def load_context(self, text, role):
         self.context.append({
@@ -180,10 +189,10 @@ class Assistant:
         return
         
 
-    def generate_response(self, context):
+    def generate_response(self):
         response  = self.client.chat.completions.create(
             model="gpt-4.1",
-            messages=context
+            messages=self.context
         )
         
         finish_reason = response.choices[0].finish_reason
@@ -192,15 +201,57 @@ class Assistant:
             return
 
         text = response.choices[0].message.content
-        self.load_context(text, "assistant")
 
         return text
         
         
 
-    def analyze_response(self, response):
+    def parse_response(self, response):
         
-        pass
+        self.load_context(response, "assistant")
+        
+        text = ''
+        function = '' 
+        args = ['']
+        i = 0
+        twoargs = False
+        while response[i] != '#':
+            text += response[i]
+            i += 1
+        i += 1
+        print(text)
+        self.speak(text)
+        while response[i] != '(':
+            function += response[i]
+            i += 1
+        i += 1
+        print(function)
+        while response [i] != ")":
+            if twoargs == True:
+                args[1] += response[i]
+                i += 1
+            else:
+                if response[i] == ",":
+                    twoargs = True
+                    args.append("")
+                    i += 1
+                else:
+                    args[0] += response[i]
+                    i += 1
+        
+
+        if function == "none":
+            return()
+        elif function == "play_music":
+            return(self.play_music(args[0], args[1]))
+        elif function == "lookup":
+            return(self.lookup(args[0]))
+        elif function == "deactivate":
+            self.responding = False
+            return()
+        else: 
+            return()
+
 
     def play_music(self, song, artist):
         #uses spotify API to play music
@@ -218,6 +269,7 @@ class Assistant:
             input = response.output_text
         )
         self.load_context(summarized.output_text, "assistant")
+        self.speak(summarized.output_text)
         return summarized.output_text
 
         

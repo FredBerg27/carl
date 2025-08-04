@@ -6,28 +6,18 @@ frame_count = 0
 try:
     while True:
         if carl.detect_word() == True:
-            # play one of the audio responses
             carl.react()
-            context = carl.default_context
-            context.append({
-                "role":"user",
-                "content":"why are you the way that you are?"
-            })
-            response = carl.generate_response(context)
-            print(response)
-            carl.speak(response)
-                # record the audio
-                 
-                # play umm or uhh
-                # translate the audio
-                # generate a response
-                # analyze response
-                # say response
-                # do desired functions
+            carl.context = carl.default_context
+            carl.responding = True
+            while carl.responding == True:
+                speech = carl.listen()
+                print(speech)
+                carl.load_context(speech, "user")
+                response = carl.generate_response()
+                print(response)
+                carl.parse_response(response)
 
              
-             
-
 except KeyboardInterrupt:
-    carl.shutdown()
+    exit()
          

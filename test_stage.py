@@ -1,35 +1,20 @@
-from classes import Assistant
+import speech_recognition as sr
+import os
+from dotenv import find_dotenv, load_dotenv
 
-fred = Assistant()
+dotenv_path = find_dotenv()
+load_dotenv(dotenv_path)
 
-fred.lookup("what happened to starship 36?")
+# obtain audio from the microphone
+r = sr.Recognizer()
+with sr.Microphone() as source:
+    print("Say something!")
+    audio = r.listen(source)
 
-fred.context = fred.default_context
-
-responding = True
-while responding == True:
-    new_query = input("$:")
-    fred.load_context(new_query, "user")
-    response = fred.generate_response(fred.context)
-    fred.load_context(response, "assistant")
-    text = ""
-    i = 0
-    while response[i] != "#":
-        text = text + response[i]
-        i += 1
-    fred.speak(text)
-    command = "" 
-    i += 1
-    while i < len(response):
-        command = command + response[i]
-        i += 1
-    
-    if command == "deactivate()":
-        responding = False
-
-    else:
-        pass
-
+try:
+    print(f"OpenAI Whisper API thinks you said {r.recognize_openai(audio)}")
+except sr.RequestError as e:
+    print(f"Could not request results from OpenAI Whisper API; {e}")
 
 
 
