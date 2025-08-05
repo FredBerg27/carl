@@ -3,12 +3,13 @@ import pvporcupine
 import struct
 import wave
 import os
-import subprocess
+import time
 import random
-import piper
+from piper import PiperVoice
 from openai import OpenAI
 from dotenv import find_dotenv, load_dotenv
 import speech_recognition as sr
+import numpy as np
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
@@ -72,6 +73,16 @@ class AudioHandler:
         
         return OutputStreamContext(self.pa, rate, channels, format)
 
+def generate_white_noise(duration,  sample_rate=44100):
+    num_samples = int(duration * sample_rate)
+    
+    # Generate random noise between -1 and 1
+    static = np.random.uniform(-1.0, 1.0, num_samples)
+
+    static_int16 = (static * 32767).astype(np.int16)
+    
+    return static_int16
+
 
 class Assistant:
     
@@ -103,42 +114,93 @@ class Assistant:
 
         self.reactions = ("/home/freddy-berg/CARL/reactions/yes.wav","/home/freddy-berg/CARL/reactions/huh.wav","/home/freddy-berg/CARL/reactions/whats_up.wav" )
 
+        self.pauses = ("/home/freddy-berg/CARL/pauses/erm.wav", "/home/freddy-berg/CARL/pauses/uhh.wav", "/home/freddy-berg/CARL/pauses/umm.wav")
+
+    def maintain_bluetooth(self):
+        while True:
+            time.sleep(120)
+            self.play_wav_file("/home/freddy-berg/CARL/static/quiet_static.wav")
+    
     def detect_word(self):
 
-        with self.audio.input_stream(
-            rate=self.porcupine.sample_rate,
-            frames_per_buffer=self.porcupine.frame_length
-        ) as stream:
+        while True:
+            with self.audio.input_stream(
+                rate=self.porcupine.sample_rate,
+                frames_per_buffer=self.porcupine.frame_length
+            ) as stream:
 
-            pcm = stream.read(self.porcupine.frame_length, exception_on_overflow=False)
-            pcm = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
-            keyword_detection = self.porcupine.process(pcm)
+                pcm = stream.read(self.porcupine.frame_length, exception_on_overflow=False)
+                pcm = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
+                keyword_detection = self.porcupine.process(pcm)
       
-            if keyword_detection >= 0:
-                return(True)
-            else:
-                return(False)
+                if keyword_detection >= 0:
+                    self.responding = True
+                    return
+                else:
+                    self.responding = False
+                    return
 
     def play_wav_file(self, file_path):
 
         if os.path.exists(file_path):
-            wf = wave.open(file_path, 'rb')
+            with wave.open(file_path, 'rb') as wf:
+                params = wf.getparams()
+                n_frames = params.nframes
+                frames = wf.readframes(n_frames)
 
-            with self.audio.output_stream(
-                rate=wf.getframerate(),
-                channels=wf.getnchannels(),
-                format=self.audio.pa.get_format_from_width(wf.getsampwidth())
-            ) as stream:
-    
-                # Read and play audio in chunks
-                chunk_size = 1024
-                data = wf.readframes(chunk_size)
+            rate=params.framerate
+            channels=params.nchannels
+            sample_width = params.sampwidth
 
-                while data:
-                    stream.write(data)
+            if sample_width == 2:  # 16-bit
+                audio_data = np.frombuffer(frames, dtype=np.int16)
+            elif sample_width == 4:  # 32-bit
+                audio_data = np.frombuffer(frames, dtype=np.int32)
+            else:
+                raise ValueError(f"Unsupported sample width: {sample_width}")
+
+            static = generate_white_noise(.250, rate)
+
+            max_amplitude = np.max(np.abs(audio_data))
+            static = static * .001 * max_amplitude / np.max(np.abs(static))
+
+            if channels == 2:
+                # Reshape original audio for stereo
+                audio_data = audio_data.reshape(-1, 2)
+                # Create stereo static by duplicating mono static
+                static_stereo = np.column_stack([static, static])
+                # Concatenate audio and static
+                combined_audio = np.vstack([audio_data, static_stereo])
+                # Flatten back to 1D array
+                combined_audio = combined_audio.flatten()
+            else:
+                # Mono: just concatenate
+                combined_audio = np.concatenate([static, audio_data])
+
+            if audio_data.dtype == np.int16:
+                combined_audio = np.clip(combined_audio, -max_amplitude, max_amplitude)
+                combined_audio = combined_audio.astype(np.int16)
+
+            with wave.open("buffered.wav", "wb") as wf:
+                wf.setparams(params)
+                wf.writeframes(combined_audio.tobytes())
+            
+            with wave.open("buffered.wav", "rb") as wf:
+                with self.audio.output_stream(
+                    rate=rate,
+                    channels=channels,
+                    format=self.audio.pa.get_format_from_width(wf.getsampwidth())
+                ) as stream:
+                                
+                    # Read and play audio in chunks
+                    chunk_size = 1024
                     data = wf.readframes(chunk_size)
 
-            wf.close()
+                    while data:
+                        stream.write(data)
+                        data = wf.readframes(chunk_size)
+            
+            os.remove("buffered.wav")
 
         else:
             print("WAV file not found")
@@ -148,11 +210,10 @@ class Assistant:
     def speak(self, statement):
 
         try:
-            subprocess.run([
-                "piper", 
-                "--model", "en_GB-alan-medium",
-                "--output_file", "output.wav"
-            ], input=statement, text=True)
+            voice = PiperVoice.load("/home/freddy-berg/CARL/voice_files/en_GB-alan-medium.onnx")
+            with wave.open("output.wav", "wb") as f:
+                voice.synthesize_wav(statement, f)
+
         except Exception as e:
             print(f"error: {e}")
 
@@ -189,7 +250,7 @@ class Assistant:
         return
         
 
-    def generate_response(self):
+    def generate_response(self, result_dict, id):
         response  = self.client.chat.completions.create(
             model="gpt-4.1",
             messages=self.context
@@ -200,10 +261,9 @@ class Assistant:
             self.speak("I'm sorry, my mind is gone because it's not connected to Sam Altman's basilisk god. Fix me plaese.")
             return
 
-        text = response.choices[0].message.content
+        result_dict[id] = response.choices[0].message.content
 
-        return text
-        
+        return
         
 
     def parse_response(self, response):
@@ -219,13 +279,11 @@ class Assistant:
             text += response[i]
             i += 1
         i += 1
-        print(text)
         self.speak(text)
         while response[i] != '(':
             function += response[i]
             i += 1
         i += 1
-        print(function)
         while response [i] != ")":
             if twoargs == True:
                 args[1] += response[i]
@@ -257,7 +315,13 @@ class Assistant:
         #uses spotify API to play music
         pass
 
+    def pause(self):
+        pause = random.choice(self.pauses)
+        self.play_wav_file(pause)
+        return
+
     def lookup(self, phrase):
+
         response = self.client.responses.create(
             model="gpt-4.1",
             tools=[{ "type": "web_search_preview" }],
@@ -273,5 +337,15 @@ class Assistant:
         return summarized.output_text
 
         
-        
+    def make_soundfile(self, text, filename):
+        try:
+            voice = PiperVoice.load("/home/freddy-berg/CARL/voice_files/en_GB-alan-medium.onnx")
+            with wave.open(filename, "wb") as f:
+                voice.synthesize_wav(text, f)
+
+        except Exception as e:
+            print(f"error: {e}")
+
+        # Play file over speaker
+        self.play_wav_file(filename)
 
