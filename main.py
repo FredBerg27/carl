@@ -1,22 +1,19 @@
 from classes import Assistant
 import threading
+import copy
 
 carl = Assistant()
 
 frame_count = 0
 try:
     while True:
-        thread1a = threading.Thread(target = carl.detect_word)
-        thread2a = threading.Thread(target = carl.maintain_bluetooth, daemon = True)
-
-        thread1a.start()
-        thread2a.start()
-
-        thread1a.join()
+        
+        carl.detect_word()
 
         if carl.responding == True:
             carl.react()
-            carl.context = carl.default_context
+            carl.context = {}
+            carl.context = copy.deepcopy(carl.default_context)
             while carl.responding == True:
                 speech = carl.listen()
                 print(speech)

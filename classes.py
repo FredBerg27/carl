@@ -3,7 +3,6 @@ import pvporcupine
 import struct
 import wave
 import os
-import time
 import random
 from piper import PiperVoice
 from openai import OpenAI
@@ -83,7 +82,6 @@ def generate_white_noise(duration,  sample_rate=44100):
     
     return static_int16
 
-
 class Assistant:
     
     def __init__(self):
@@ -116,30 +114,63 @@ class Assistant:
 
         self.pauses = ("/home/freddy-berg/CARL/pauses/erm.wav", "/home/freddy-berg/CARL/pauses/uhh.wav", "/home/freddy-berg/CARL/pauses/umm.wav")
 
-    def maintain_bluetooth(self):
-        while True:
-            time.sleep(120)
-            self.play_wav_file("/home/freddy-berg/CARL/static/quiet_static.wav")
     
     def detect_word(self):
-
-        while True:
-            with self.audio.input_stream(
-                rate=self.porcupine.sample_rate,
-                frames_per_buffer=self.porcupine.frame_length
-            ) as stream:
+        print("listening for 'hey carl'")
+        with self.audio.input_stream(
+            rate=self.porcupine.sample_rate,
+            frames_per_buffer=self.porcupine.frame_length
+        ) as stream:
+            
+            i = 0
+            while True:
 
                 pcm = stream.read(self.porcupine.frame_length, exception_on_overflow=False)
                 pcm = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
                 keyword_detection = self.porcupine.process(pcm)
-      
+                if i % 5000 == 0 and i >= 5000:
+                    print("maintaining bluetooth connection")
+                    self.play_wav_file("/home/freddy-berg/CARL/static/quiet_static.wav")
+                else:
+                    pass
+
                 if keyword_detection >= 0:
                     self.responding = True
                     return
                 else:
-                    self.responding = False
-                    return
+                    i += 1
+                    print(i)
+                    pass
 
+    def play_wav_unbuffered(self, file_path):
+
+        if os.path.exists(file_path):
+            with wave.open(file_path, 'rb') as wf:
+                params = wf.getparams()
+            
+                rate=params.framerate
+                channels=params.nchannels
+                sample_width = params.sampwidth
+
+                with self.audio.output_stream(
+                    rate=rate,
+                    channels=channels,
+                    format=self.audio.pa.get_format_from_width(sample_width)
+                ) as stream:
+                                
+                    # Read and play audio in chunks
+                    chunk_size = 1024
+                    data = wf.readframes(chunk_size)
+
+                    while data:
+                        stream.write(data)
+                        data = wf.readframes(chunk_size)
+            return
+        
+        else: 
+            print("WAV file not found")
+            return(1)
+    
     def play_wav_file(self, file_path):
 
         if os.path.exists(file_path):
@@ -206,7 +237,6 @@ class Assistant:
             print("WAV file not found")
             return 1
 
-
     def speak(self, statement):
 
         try:
@@ -231,16 +261,16 @@ class Assistant:
     def listen(self):
         r = sr.Recognizer()
         with sr.Microphone() as source:
-            print("Say something!")
-            audio = r.listen(source)
+            r.pause_threshold = 1.1
+            r.non_speaking_duration = .08
+            print("Speak")
+            audio = r.listen(source, timeout=1, phrase_time_limit=20)
         try:
             text = r.recognize_openai(audio)
         except sr.RequestError as e:
             print(e)
 
         return text
-
-
 
     def load_context(self, text, role):
         self.context.append({
@@ -249,7 +279,6 @@ class Assistant:
         })
         return
         
-
     def generate_response(self, result_dict, id):
         response  = self.client.chat.completions.create(
             model="gpt-4.1",
@@ -265,7 +294,6 @@ class Assistant:
 
         return
         
-
     def parse_response(self, response):
         
         self.load_context(response, "assistant")
@@ -310,7 +338,6 @@ class Assistant:
         else: 
             return()
 
-
     def play_music(self, song, artist):
         #uses spotify API to play music
         pass
@@ -335,7 +362,6 @@ class Assistant:
         self.load_context(summarized.output_text, "assistant")
         self.speak(summarized.output_text)
         return summarized.output_text
-
         
     def make_soundfile(self, text, filename):
         try:
