@@ -10,7 +10,7 @@ from dotenv import find_dotenv, load_dotenv
 import speech_recognition as sr
 import numpy as np
 import yt_dlp
-import pygame
+import tempfile
 import fastapi
 
 
@@ -80,16 +80,6 @@ class AudioHandler:
         
         return OutputStreamContext(self.pa, rate, channels, format)
 
-def generate_white_noise(duration,  sample_rate=44100):
-    num_samples = int(duration * sample_rate)
-    
-    # Generate random noise between -1 and 1
-    static = np.random.uniform(-1.0, 1.0, num_samples)
-
-    static_int16 = (static * 32767).astype(np.int16)
-    
-    return static_int16
-
 class Assistant:
     
     def __init__(self):
@@ -122,7 +112,13 @@ class Assistant:
 
         self.pauses = ("/home/freddy-berg/CARL/pauses/erm.wav", "/home/freddy-berg/CARL/pauses/uhh.wav", "/home/freddy-berg/CARL/pauses/umm.wav")
 
-    
+        self.music_remarks = [
+            "What a good tune. Is there anything else you'd like me to play?",
+            "Another song, perhaps?",
+            "Which one would you like me to play now?",
+            "Which song now?"
+        ]
+
     def detect_word(self):
         print("listening for 'hey carl'")
         with self.audio.input_stream(
@@ -136,21 +132,14 @@ class Assistant:
                 pcm = stream.read(self.porcupine.frame_length, exception_on_overflow=False)
                 pcm = struct.unpack_from("h" * self.porcupine.frame_length, pcm)
                 keyword_detection = self.porcupine.process(pcm)
-                if i % 5000 == 0 and i >= 5000:
-                    print("maintaining bluetooth connection")
-                    self.play_wav_file("/home/freddy-berg/CARL/static/quiet_static.wav")
-                else:
-                    pass
 
                 if keyword_detection >= 0:
                     self.responding = True
                     return
                 else:
-                    i += 1
-                    print(i)
                     pass
 
-    def play_wav_unbuffered(self, file_path):
+    def play_wav_file(self, file_path):
 
         if os.path.exists(file_path):
             with wave.open(file_path, 'rb') as wf:
@@ -179,72 +168,6 @@ class Assistant:
             print("WAV file not found")
             return(1)
     
-    def play_wav_file(self, file_path):
-
-        if os.path.exists(file_path):
-            with wave.open(file_path, 'rb') as wf:
-                params = wf.getparams()
-                n_frames = params.nframes
-                frames = wf.readframes(n_frames)
-
-            rate=params.framerate
-            channels=params.nchannels
-            sample_width = params.sampwidth
-
-            if sample_width == 2:  # 16-bit
-                audio_data = np.frombuffer(frames, dtype=np.int16)
-            elif sample_width == 4:  # 32-bit
-                audio_data = np.frombuffer(frames, dtype=np.int32)
-            else:
-                raise ValueError(f"Unsupported sample width: {sample_width}")
-
-            static = generate_white_noise(.250, rate)
-
-            max_amplitude = np.max(np.abs(audio_data))
-            static = static * .001 * max_amplitude / np.max(np.abs(static))
-
-            if channels == 2:
-                # Reshape original audio for stereo
-                audio_data = audio_data.reshape(-1, 2)
-                # Create stereo static by duplicating mono static
-                static_stereo = np.column_stack([static, static])
-                # Concatenate audio and static
-                combined_audio = np.vstack([audio_data, static_stereo])
-                # Flatten back to 1D array
-                combined_audio = combined_audio.flatten()
-            else:
-                # Mono: just concatenate
-                combined_audio = np.concatenate([static, audio_data])
-
-            if audio_data.dtype == np.int16:
-                combined_audio = np.clip(combined_audio, -max_amplitude, max_amplitude)
-                combined_audio = combined_audio.astype(np.int16)
-
-            with wave.open("buffered.wav", "wb") as wf:
-                wf.setparams(params)
-                wf.writeframes(combined_audio.tobytes())
-            
-            with wave.open("buffered.wav", "rb") as wf:
-                with self.audio.output_stream(
-                    rate=rate,
-                    channels=channels,
-                    format=self.audio.pa.get_format_from_width(wf.getsampwidth())
-                ) as stream:
-                                
-                    # Read and play audio in chunks
-                    chunk_size = 1024
-                    data = wf.readframes(chunk_size)
-
-                    while data:
-                        stream.write(data)
-                        data = wf.readframes(chunk_size)
-            
-            os.remove("buffered.wav")
-
-        else:
-            print("WAV file not found")
-            return 1
-
     def speak(self, statement):
 
         try:
@@ -272,7 +195,7 @@ class Assistant:
             r.pause_threshold = 1.1
             r.non_speaking_duration = .08
             print("Speak")
-            audio = r.listen(source, timeout=1, phrase_time_limit=20)
+            audio = r.listen(source, timeout=1.2, phrase_time_limit=20)
         try:
             text = r.recognize_openai(audio)
         except sr.RequestError as e:
@@ -347,20 +270,33 @@ class Assistant:
             return()
 
     def play_music(self, song, artist):
+        
+        temp_dir = tempfile.mkdtemp()
+        
         ydl_opts = {
             'format': 'bestaudio/best',
+            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'wav',  
+            }],
             'quiet': True,
-            'no_warnings': True,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             search_query = f"ytsearch1:{artist} {song}"
-            info = ydl.extract_info(search_query, download=False)
+            info = ydl.extract_info(search_query, download=True)
             if info['entries']:
-                url = info['entries'][0]['url']
-                pygame.mixer.init()
-                pygame.mixer.music.load(url)
-                pygame.mixer.music.play()
+                entry = info['entries'][0]
+                filename = ydl.prepare_filename(entry)
+                wav_filename = os.path.splitext(filename)[0] + '.wav'
+
+                self.play_wav_file(wav_filename)
+                
+                remark = random.choice(self.music_remarks)
+                self.speak(remark)
+                self.load_context(remark, "assistant")
                 return
+            
             else:
                 print("song not found")
                 return(1)
