@@ -9,11 +9,19 @@ from openai import OpenAI
 from dotenv import find_dotenv, load_dotenv
 import speech_recognition as sr
 import numpy as np
+import yt_dlp
+import pygame
+import fastapi
+
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
 pcup_access = os.getenv("pcup_access")
 path_to_wake = os.getenv("path_to_wake")
+client_id = os.getenv("SPOTIPY_CLIENT_ID")
+client_secret = os.getenv("SPOTIPY_CLIENT_SECRET")
+redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI")
+scope = "user-modify-playback-state user-read-playback-state"
 
 class AudioHandler:
     def __init__(self):
@@ -339,8 +347,23 @@ class Assistant:
             return()
 
     def play_music(self, song, artist):
-        #uses spotify API to play music
-        pass
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'quiet': True,
+            'no_warnings': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            search_query = f"ytsearch1:{artist} {song}"
+            info = ydl.extract_info(search_query, download=False)
+            if info['entries']:
+                url = info['entries'][0]['url']
+                pygame.mixer.init()
+                pygame.mixer.music.load(url)
+                pygame.mixer.music.play()
+                return
+            else:
+                print("song not found")
+                return(1)
 
     def pause(self):
         pause = random.choice(self.pauses)
